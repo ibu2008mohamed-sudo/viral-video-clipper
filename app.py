@@ -20,7 +20,7 @@ def get_video_id(url_str):
 
 def download_video(url_str, output_path="temp_video.mp4"):
     ydl_opts = {
-        'format': 'best[ext=mp4]/best',
+        'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best',
         'outtmpl': output_path,
         'quiet': True,
         'overwrites': True,

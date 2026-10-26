@@ -17,32 +17,29 @@ def get_video_id(url_str):
     elif "watch?v=" in url_str:
         return url_str.split("watch?v=")[1].split("&")[0]
     return None
+import requests
+
 def download_video(url_str, output_path="temp_video.mp4"):
-    ydl_opts = {
-        'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
-        'outtmpl': output_path,
-        'quiet': True,
-        'overwrites': True,
-        'cookiefile': 'cookies.txt' if os.path.exists('cookies.txt') else None,
-        'extractor_args': {
-            'youtube': {
-                'player_client': ['mweb', 'ios', 'android', 'web'],
-                'skip': ['hls', 'dash']
-            }
-        },
-        'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
-            'Accept-Language': 'en-US,en;q=0.9',
-        },
-        'legacyserverconnect': True,
-        'nocheckcertificate': True
+    api_url = "https://api.cobalt.tools/api/json"
+    payload = {
+        "url": url_str,
+        "vQuality": "720"
     }
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        ydl.download([url_str])
-    return output_path
-def find_best_segment(vid_id):
-    try:
-        transcript = YouTubeTranscriptApi.get_transcript(vid_id)
+    headers = {
+        "Accept": "application/json",
+        "Content-Type": "application/json"
+    }
+    
+    response = requests.post(api_url, json=payload, headers=headers)
+    data = response.json()
+    
+    if "url" in data:
+        video_bytes = requests.get(data["url"]).content
+        with open(output_path, "wb") as f:
+            f.write(video_bytes)
+        return output_path
+    else:
+        raise Exception(f"Cobalt download failed: {data}")
         best_start = 0
         max_words = 0
         for i, entry in enumerate(transcript):

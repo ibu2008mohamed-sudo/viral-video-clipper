@@ -1,61 +1,63 @@
 import os
-import glob
-import math
-import warnings
 import streamlit as st
 import yt_dlp
-from moviepy.video.io.VideoFileClip import VideoFileClip
+from moviepy.editor import VideoFileClip
 
-# Suppress yellow warning messages
-warnings.filterwarnings("ignore")
+st.set_page_config(page_title="Viral Video Clipper", layout="centered")
 
-# Streamlit Page Config
-st.set_page_config(page_title="AI Video Clipper", page_icon="🎬", layout="wide")
+st.title("🎬 Viral Video Clipper")
+st.write("Paste a video URL to automatically download and trim a clip.")
 
-st.title("🎬 Viral Short Clip Generator")
-st.write("Paste any video link below to automatically generate viral clips!")
-
-# Input Controls
-video_url = st.text_input("Enter Video Link (YouTube, Vimeo, direct MP4, etc.):")
-
+# Inputs
+video_url = st.text_input("Enter Video URL (YouTube, Vimeo, etc.):")
 col1, col2 = st.columns(2)
 with col1:
-    clip_count = st.radio("Number of clips to generate:", options=[6, 10], index=0)
+    start_time = st.number_input("Start Time (seconds)", min_value=0, value=0)
 with col2:
-    clip_duration = st.slider("Clip Duration (seconds):", min_value=15, max_value=60, value=30)
+    end_time = st.number_input("End Time (seconds)", min_value=1, value=10)
 
-def download_video(url, output_dir="temp_dir"):
-    os.makedirs(output_dir, exist_ok=True)
-    ydl_opts = {
-        'format': 'mp4/bestvideo+bestaudio/best',
-        'outtmpl': os.path.join(output_dir, 'input_video.%(ext)s'),
-        'merge_output_format': 'mp4',
-        'quiet': True
-    }
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        ydl.download([url])
-    return os.path.join(output_dir, 'input_video.mp4')
-
-if st.button("Generate Clips ✂️"):
+if st.button("Cut Video"):
     if not video_url:
-        st.error("Please enter a valid video link first!")
+        st.warning("Please enter a valid URL first.")
+    elif start_time >= end_time:
+        st.error("Start time must be less than end time.")
     else:
+        status = st.empty()
+        status.info("Downloading video...")
+        
+        output_dir = "downloads"
+        os.makedirs(output_dir, exist_ok=True)
+        raw_video_path = os.path.join(output_dir, "raw_video.mp4")
+        clip_video_path = os.path.join(output_dir, "clipped_video.mp4")
+
         try:
-            with st.spinner("Downloading video from link..."):
-                raw_video_path = download_video(video_url)
+            # Step 1: Download Video
+            ydl_opts = {
+                'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+                'outtmpl': raw_video_path,
+                'overwrites': True,
+            }
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                ydl.download([video_url])
 
-            st.success("Download complete! Processing clips...")
+            status.info("Trimming video clip...")
 
-            # Load video to read duration
-            clip = VideoFileClip(raw_video_path)
-            total_seconds = clip.duration
-            clip.close()
+            # Step 2: Trim Video
+            with VideoFileClip(raw_video_path) as video:
+                subclip = video.subclip(start_time, end_time)
+                subclip.write_videofile(clip_video_path, codec="libx264", audio_codec="aac")
 
-            # Calculate interval spacing so clips are spread evenly throughout the video
-            interval = (total_seconds - clip_duration) / max(1, (clip_count - 1))
-            output_folder = "output_clips"
-            os.makedirs(output_folder, exist_ok=True)
+            status.success("Done!")
 
-            processed_clips = []
+            # Step 3: Display & Download
+            st.video(clip_video_path)
+            with open(clip_video_path, "rb") as file:
+                st.download_button(
+                    label="Download Clip",
+                    data=file,
+                    file_name="clip.mp4",
+                    mime="video/mp4"
+                )
 
-            # Create Clips
+        except Exception as e:
+            status.error(f"An error occurred: {str(e)}")

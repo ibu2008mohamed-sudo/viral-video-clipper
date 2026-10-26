@@ -1,63 +1,114 @@
 import os
 import streamlit as st
 import yt_dlp
-from moviepy.editor import VideoFileClip
+from youtube_transcript_api import YouTubeTranscriptApi
+from moviepy.editor import VideoFileClip, TextClip, CompositeVideoClip
 
-st.set_page_config(page_title="Viral Video Clipper", layout="centered")
+st.set_page_config(page_title="AI Shorts & Viral Clipper", page_icon="🎬", layout="centered")
 
-st.title("🎬 Viral Video Clipper")
-st.write("Paste a video URL to automatically download and trim a clip.")
+st.title("🎬 AI Viral Shorts Generator")
+st.write("Paste a YouTube URL to automatically extract engaging clips, crop to 9:16 vertical format, and render captions.")
 
-# Inputs
-video_url = st.text_input("Enter Video URL (YouTube, Vimeo, etc.):")
-col1, col2 = st.columns(2)
-with col1:
-    start_time = st.number_input("Start Time (seconds)", min_value=0, value=0)
-with col2:
-    end_time = st.number_input("End Time (seconds)", min_value=1, value=10)
+url = st.text_input("Enter YouTube Video URL:")
 
-if st.button("Cut Video"):
-    if not video_url:
-        st.warning("Please enter a valid URL first.")
-    elif start_time >= end_time:
-        st.error("Start time must be less than end time.")
+def get_video_id(url):
+    if "youtu.be/" in url:
+        return url.split("youtu.be/")[1].split("?")[0]
+    elif "watch?v=" in url:
+        return url.split("watch?v=")[1].split("&")[0]
+    return None
+
+def download_video(url, output_path="temp_video.mp4"):
+    ydl_opts = {
+        'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+        'outtmpl': output_path,
+        'quiet': True,
+        'overwrites': True
+    }
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        ydl.download([url])
+    return output_path
+
+def find_best_segment(video_id):
+    """Finds a 30-60s clip based on speech density in transcript."""
+    try:
+        transcript = YouTubeTranscriptApi.get_transcript(video_id)
+        # Find continuous 45-second block with highest word count
+        best_start = 0
+        max_words = 0
+        for i, entry in enumerate(transcript):
+            start = entry['start']
+            words = 0
+            for j in range(i, len(transcript)):
+                if transcript[j]['start'] - start > 45:
+                    break
+                words += len(transcript[j]['text'].split())
+            if words > max_words:
+                max_words = words
+                best_start = start
+        return best_start, best_start + 45, transcript
+    except Exception:
+        # Fallback to first 45 seconds if no transcript exists
+        return 0, 45, []
+
+def crop_to_vertical(clip):
+    """Crops landscape video to 9:16 vertical ratio centered."""
+    w, h = clip.size
+    target_w = int(h * (9 / 16))
+    if target_w > w:
+        target_w = w
+    x1 = (w - target_w) // 2
+    return clip.crop(x1=x1, width=target_w, y1=0, height=h)
+
+if st.button("Generate AI Short"):
+    if not url:
+        st.error("Please enter a valid YouTube URL.")
     else:
-        status = st.empty()
-        status.info("Downloading video...")
-        
-        output_dir = "downloads"
-        os.makedirs(output_dir, exist_ok=True)
-        raw_video_path = os.path.join(output_dir, "raw_video.mp4")
-        clip_video_path = os.path.join(output_dir, "clipped_video.mp4")
+        video_id = get_video_id(url)
+        if not video_id:
+            st.error("Invalid YouTube link format.")
+        else:
+            with st.spinner("Analyzing transcript & finding viral moments..."):
+                start_time, end_time, transcript = find_best_segment(video_id)
+                st.info(f"Selected clip timing: {int(start_time)}s to {int(end_time)}s")
 
-        try:
-            # Step 1: Download Video
-            ydl_opts = {
-                'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
-                'outtmpl': raw_video_path,
-                'overwrites': True,
-            }
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                ydl.download([video_url])
+            with st.spinner("Downloading video stream..."):
+                raw_video = download_video(url)
 
-            status.info("Trimming video clip...")
+            with st.spinner("Cropping to 9:16 Shorts format and adding captions..."):
+                full_clip = VideoFileClip(raw_video)
+                trimmed = full_clip.subclip(start_time, end_time)
+                vertical_clip = crop_to_vertical(trimmed)
 
-            # Step 2: Trim Video
-            with VideoFileClip(raw_video_path) as video:
-                subclip = video.subclip(start_time, end_time)
-                subclip.write_videofile(clip_video_path, codec="libx264", audio_codec="aac")
+                # Collect active subtitles for this time range
+                subtitle_clips = [vertical_clip]
+                for item in transcript:
+                    t_start = item['start'] - start_time
+                    t_dur = item['duration']
+                    if 0 <= t_start < (end_time - start_time):
+                        txt = TextClip(
+                            item['text'], 
+                            fontsize=28, 
+                            color='yellow', 
+                            font='Arial-Bold',
+                            stroke_color='black',
+                            stroke_width=2,
+                            method='caption',
+                            size=(vertical_clip.w - 40, None)
+                        ).set_start(t_start).set_duration(t_dur).set_position(('center', 'bottom'))
+                        subtitle_clips.append(txt)
 
-            status.success("Done!")
+                final_output = CompositeVideoClip(subtitle_clips)
+                output_filename = "viral_short.mp4"
+                final_output.write_videofile(output_filename, codec="libx264", audio_codec="aac", fps=24)
 
-            # Step 3: Display & Download
-            st.video(clip_video_path)
-            with open(clip_video_path, "rb") as file:
+            st.success("Your AI Short is ready!")
+            st.video(output_filename)
+
+            with open(output_filename, "rb") as file:
                 st.download_button(
-                    label="Download Clip",
+                    label="Download Short (.mp4)",
                     data=file,
-                    file_name="clip.mp4",
+                    file_name="viral_short.mp4",
                     mime="video/mp4"
                 )
-
-        except Exception as e:
-            status.error(f"An error occurred: {str(e)}")

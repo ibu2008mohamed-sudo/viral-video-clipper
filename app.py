@@ -17,14 +17,18 @@ def get_video_id(url_str):
     elif "watch?v=" in url_str:
         return url_str.split("watch?v=")[1].split("&")[0]
     return None
-
 def download_video(url_str, output_path="temp_video.mp4"):
     ydl_opts = {
-        'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best',
+        'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
         'outtmpl': output_path,
         'quiet': True,
         'overwrites': True,
         'cookiefile': 'cookies.txt' if os.path.exists('cookies.txt') else None,
+        'extractor_args': {
+            'youtube': {
+                'player_client': ['android', 'web']
+            }
+        },
         'http_headers': {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
         }
@@ -32,7 +36,6 @@ def download_video(url_str, output_path="temp_video.mp4"):
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         ydl.download([url_str])
     return output_path
-
 def find_best_segment(vid_id):
     try:
         transcript = YouTubeTranscriptApi.get_transcript(vid_id)

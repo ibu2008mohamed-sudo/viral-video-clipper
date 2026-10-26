@@ -24,6 +24,7 @@ def download_video(url_str, output_path="temp_video.mp4"):
         'outtmpl': output_path,
         'quiet': True,
         'overwrites': True,
+        'cookiefile': 'cookies.txt' if os.path.exists('cookies.txt') else None,
         'http_headers': {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
         }
